@@ -1,0 +1,16 @@
+﻿EVT: Started C:\Users\JOSEDU~1\AppData\Local\Programs\Python\PYTHON~1\python.exe C:\Users\JOSEDU~1\DOCUME~1\DOCUME~1\Python\ANLISE~2\analytics\server.py for service DashboardAnalytics in C:\Users\JOSEDU~1\DOCUME~1\DOCUME~1\Python\ANLISE~2.
+EVT: Service DashboardAnalytics received START control, which will be handled.
+EVT: Requested stop of service DashboardAnalytics.  No action is required as program C:\Users\JOSEDU~1\AppData\Local\Programs\Python\PYTHON~1\python.exe is not running.
+EVT: Failed to start service DashboardAnalytics.  Program C:\Users\JOSEDU~1\AppData\Local\Programs\Python\PYTHON~1\python.exe couldn't be launched.
+CreateProcess() failed:
+O nome do diretório é inválido.
+
+EVT: Service DashboardAnalytics received START control, which will be handled.
+EVT: Requested stop of service DashboardAnalytics.  No action is required as program C:\Users\JOSEDU~1\AppData\Local\Programs\Python\PYTHON~1\python.exe is not running.
+EVT: Failed to start service DashboardAnalytics.  Program C:\Users\JOSEDU~1\AppData\Local\Programs\Python\PYTHON~1\python.exe couldn't be launched.
+CreateProcess() failed:
+O nome do diretório é inválido.
+
+EVT: Service DashboardAnalytics received START control, which will be handled.
+EVT: Started C:\Program Files\nodejs\node.exe backend\index.js for service FieldFocusBackend in C:\Users\joseduque\Documents\Documentos\Python\Painel Agronegócio V.2\service\...
+EVT: Started C:\Program Files\nodejs\node.exe server.js for service FieldFocusWebServer in C:\Users\joseduque\Documents\Documentos\Python\Painel Agronegócio V.2\service\...
