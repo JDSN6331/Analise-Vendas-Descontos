@@ -237,6 +237,8 @@ def generate_dashboard_data(results, df):
         loja_top_por_alcada = period_results['financial'].get('loja_top_por_alcada', {})
         faixas_por_alcada = period_results['financial'].get('faixas_por_alcada', {})
         desconto_por_grupo = period_results['financial'].get('desconto_por_grupo', None)
+        desconto_por_grupo_ajustado = period_results['financial'].get('desconto_por_grupo_ajustado', None)
+        desconto_por_grupo_impacto = period_results['financial'].get('desconto_por_grupo_impacto', None)
         
         # Dados regionais (se disponível)
         regions_data = {}
@@ -344,6 +346,8 @@ def generate_dashboard_data(results, df):
             'loja_top_por_alcada': loja_top_por_alcada,
             'faixas_por_alcada': faixas_por_alcada,
             'desconto_por_grupo': desconto_por_grupo[['grupo_produto', 'total_desconto', 'qtd_pedidos', 'pct_do_total', 'faturamento']].to_dict('records') if desconto_por_grupo is not None else [],
+            'desconto_por_grupo_ajustado': desconto_por_grupo_ajustado[['grupo_produto', 'total_desconto', 'qtd_pedidos', 'pct_do_total', 'faturamento']].to_dict('records') if desconto_por_grupo_ajustado is not None else [],
+            'desconto_por_grupo_impacto': desconto_por_grupo_impacto if desconto_por_grupo_impacto is not None else {},
             'vendedores_por_filial': vendedores_por_filial,
             'todos_os_pedidos': todos_os_pedidos,
             # Dados regionais

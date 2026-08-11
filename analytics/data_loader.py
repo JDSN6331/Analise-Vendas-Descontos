@@ -3,6 +3,7 @@ Módulo de carregamento e preparação de dados para análises.
 Cooxupé Sales Analytics
 """
 
+import os
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -10,21 +11,51 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
+def _read_csv_with_fallback(filepath: str, sep: str = ';') -> pd.DataFrame:
+    """
+    Lê CSV tentando encodings comuns de exportações Windows/Excel.
+    """
+    encodings = ['utf-8', 'utf-8-sig', 'cp1252', 'latin1']
+    last_error = None
+
+    for encoding in encodings:
+        try:
+            df = pd.read_csv(filepath, encoding=encoding, sep=sep)
+            print(f"   Encoding detectado: {encoding}")
+            return df
+        except UnicodeDecodeError as exc:
+            last_error = exc
+
+    raise last_error
+
+
+def _extract_filial_codigo(value) -> str:
+    """Extrai o código da filial/organização antes do separador ':'."""
+    value = '' if pd.isna(value) else str(value).strip()
+    return value.split(':')[0].strip() if ':' in value else value
+
+
 def load_data(filepath: str) -> pd.DataFrame:
     """
-    Carrega e prepara os dados do arquivo Excel ou CSV.
+    Carrega e prepara os dados do arquivo Excel ou CSV (suporta .csv.gz).
     
     Args:
-        filepath: Caminho para o arquivo Excel (.xlsx) ou CSV (.csv)
+        filepath: Caminho para o arquivo Excel (.xlsx) ou CSV (.csv/.csv.gz)
         
     Returns:
         DataFrame preparado para análises
     """
     print("📂 Carregando dados...")
     
+    if not os.path.exists(filepath):
+        if os.path.exists(filepath + '.gz'):
+            filepath = filepath + '.gz'
+        elif filepath.endswith('.gz') and os.path.exists(filepath[:-3]):
+            filepath = filepath[:-3]
+    
     # Detectar tipo de arquivo e carregar
-    if filepath.lower().endswith('.csv'):
-        df = pd.read_csv(filepath, encoding='utf-8', sep=';')
+    if filepath.lower().endswith('.csv') or filepath.lower().endswith('.csv.gz'):
+        df = _read_csv_with_fallback(filepath, sep=';')
     else:
         df = pd.read_excel(filepath)
     
@@ -69,7 +100,7 @@ def load_data(filepath: str) -> pd.DataFrame:
     df['filial_nome'] = df['filial'].apply(lambda x: x.split(':')[-1].strip() if ':' in str(x) else str(x))
     
     # Extrair código da filial (para matching com mesoregião)
-    df['filial_codigo'] = df['filial'].apply(lambda x: x.split(':')[0].strip() if ':' in str(x) else str(x))
+    df['filial_codigo'] = df['filial'].apply(_extract_filial_codigo)
     
     # Criar flag de desconto
     df['tem_desconto'] = df['valor_desconto_manual'] > 0
@@ -140,7 +171,7 @@ def load_grupo_produtos(filepath: str = None) -> pd.DataFrame:
     Carrega a tabela de grupos de produtos.
     
     Args:
-        filepath: Caminho para o arquivo CSV de grupos de produtos
+        filepath: Caminho para o arquivo CSV ou Excel de grupos de produtos
         
     Returns:
         DataFrame com mapeamento cod_produto -> grupo_produto
@@ -150,14 +181,21 @@ def load_grupo_produtos(filepath: str = None) -> pd.DataFrame:
     
     if filepath is None:
         data_dir = Path(__file__).parent.parent / 'data'
-        files = [f for f in os.listdir(data_dir) if 'Grupo de Produtos' in f and f.endswith('.csv')]
-        if not files:
-            print("⚠️ Arquivo de Grupo de Produtos não encontrado")
-            return None
-        filepath = data_dir / files[0]
+        excel_path = data_dir / 'Produtos e Grupo de Produtos.xlsx'
+        if excel_path.exists():
+            filepath = excel_path
+        else:
+            files = [f for f in os.listdir(data_dir) if 'Grupo de Produtos' in f and f.endswith('.csv')]
+            if not files:
+                print("⚠️ Arquivo de Grupo de Produtos não encontrado")
+                return None
+            filepath = data_dir / files[0]
     
-    print("📂 Carregando grupos de produtos...")
-    df_grupo = pd.read_csv(filepath, sep=';', encoding='utf-8')
+    print(f"📂 Carregando grupos de produtos de {filepath.name}...")
+    if str(filepath).lower().endswith('.xlsx'):
+        df_grupo = pd.read_excel(filepath)
+    else:
+        df_grupo = _read_csv_with_fallback(filepath, sep=';')
     
     # Renomear colunas para facilitar uso
     df_grupo.columns = ['cod_produto', 'nome_produto', 'ativo', 'cod_grupo', 'grupo_produto']
@@ -171,6 +209,133 @@ def load_grupo_produtos(filepath: str = None) -> pd.DataFrame:
     print(f"✅ Grupos de produtos carregados: {df_grupo['grupo_produto'].nunique()} grupos, {len(df_grupo)} produtos")
     
     return df_grupo
+
+
+def load_estoque_critico(data_dir: str = None) -> pd.DataFrame:
+    """
+    Consolida itens vencidos e a vencer em até 60 dias.
+
+    Returns:
+        DataFrame deduplicado por produto + filial com a criticidade máxima.
+    """
+    import os
+    from pathlib import Path
+
+    if data_dir is None:
+        data_dir = Path(__file__).parent.parent / 'data'
+    else:
+        data_dir = Path(data_dir)
+
+    file_configs = [
+        {
+            'keyword': 'ESTOQUE VENCIDO',
+            'status_validade': 'vencido',
+            'dias_janela': 0,
+            'criticidade': 3,
+        },
+        {
+            'keyword': 'ESTOQUE A VENCER EM 30 DIAS',
+            'status_validade': 'vence_30',
+            'dias_janela': 30,
+            'criticidade': 2,
+        },
+        {
+            'keyword': 'ESTOQUE A VENCER EM 60 DIAS',
+            'status_validade': 'vence_60',
+            'dias_janela': 60,
+            'criticidade': 1,
+        },
+    ]
+
+    frames = []
+    for config in file_configs:
+        files = [
+            f for f in os.listdir(data_dir)
+            if config['keyword'] in f.upper() and f.lower().endswith('.xlsx')
+        ]
+        if not files:
+            continue
+
+        filepath = data_dir / files[0]
+        df_raw = pd.read_excel(filepath)
+        columns = list(df_raw.columns)
+
+        if len(columns) >= 10:
+            rename_map = {
+                columns[0]: 'organizacao',
+                columns[1]: 'cod_produto',
+                columns[2]: 'produto',
+                columns[3]: 'unidade',
+                columns[4]: 'grupo_estoque',
+                columns[5]: 'quantidade_critica',
+                columns[6]: 'lote_estoque',
+                columns[7]: 'data_expiracao_lote',
+                columns[8]: 'custo_unitario',
+                columns[9]: 'custo_total',
+            }
+        elif len(columns) >= 9:
+            rename_map = {
+                columns[0]: 'organizacao',
+                columns[1]: 'cod_produto',
+                columns[2]: 'produto',
+                columns[3]: 'unidade',
+                columns[4]: 'quantidade_critica',
+                columns[5]: 'lote_estoque',
+                columns[6]: 'data_expiracao_lote',
+                columns[7]: 'custo_unitario',
+                columns[8]: 'custo_total',
+            }
+        else:
+            print(f"⚠️ Estrutura inesperada no arquivo de estoque crítico: {filepath.name}")
+            continue
+
+        df_temp = df_raw.rename(columns=rename_map)
+        if 'grupo_estoque' not in df_temp.columns:
+            df_temp['grupo_estoque'] = np.nan
+
+        keep_cols = [
+            'organizacao', 'cod_produto', 'produto', 'unidade', 'grupo_estoque',
+            'quantidade_critica', 'lote_estoque', 'data_expiracao_lote',
+            'custo_unitario', 'custo_total'
+        ]
+        df_temp = df_temp[keep_cols].copy()
+        df_temp['status_validade'] = config['status_validade']
+        df_temp['dias_janela'] = config['dias_janela']
+        df_temp['criticidade'] = config['criticidade']
+        frames.append(df_temp)
+
+    if not frames:
+        print("⚠️ Arquivos de estoque crítico não encontrados")
+        return None
+
+    df_estoque = pd.concat(frames, ignore_index=True)
+    df_estoque['cod_produto'] = pd.to_numeric(df_estoque['cod_produto'], errors='coerce').fillna(0).astype(int)
+    df_estoque = df_estoque[df_estoque['cod_produto'] > 0].copy()
+    df_estoque['organizacao'] = df_estoque['organizacao'].fillna('').astype(str).str.strip()
+    df_estoque['filial_codigo'] = df_estoque['organizacao'].apply(_extract_filial_codigo)
+    df_estoque['produto'] = df_estoque['produto'].fillna('').astype(str).str.strip()
+    df_estoque['data_expiracao_lote'] = pd.to_datetime(df_estoque['data_expiracao_lote'], errors='coerce')
+
+    numeric_cols = ['quantidade_critica', 'custo_unitario', 'custo_total']
+    for col in numeric_cols:
+        df_estoque[col] = pd.to_numeric(df_estoque[col], errors='coerce').fillna(0)
+
+    df_estoque = df_estoque.sort_values(
+        ['cod_produto', 'filial_codigo', 'criticidade', 'data_expiracao_lote'],
+        ascending=[True, True, False, True]
+    )
+    df_estoque = df_estoque.drop_duplicates(
+        subset=['cod_produto', 'filial_codigo'],
+        keep='first'
+    ).reset_index(drop=True)
+
+    print(
+        "✅ Estoque crítico carregado: "
+        f"{len(df_estoque):,} combinações produto/filial, "
+        f"{df_estoque['cod_produto'].nunique()} produtos"
+    )
+
+    return df_estoque
 
 
 if __name__ == "__main__":

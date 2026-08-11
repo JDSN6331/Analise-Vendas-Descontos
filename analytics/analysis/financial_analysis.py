@@ -182,6 +182,62 @@ def categorizar_motivo(texto):
     return resumo
 
 
+def _calcular_desconto_por_grupo(df_base: pd.DataFrame) -> pd.DataFrame:
+    """Agrupa descontos por grupo de produto com a lógica do dashboard."""
+    if len(df_base) == 0:
+        return None
+
+    desconto_por_grupo = df_base.groupby('grupo_produto').agg(
+        total_desconto=('valor_desconto_manual', 'sum'),
+        qtd_pedidos=('num_pedido', 'nunique'),
+        pct_medio=('desconto_manual_pct', 'mean'),
+        faturamento=('preco_total', 'sum')
+    ).reset_index()
+
+    desconto_por_grupo = desconto_por_grupo.sort_values('total_desconto', ascending=False)
+    total_desconto_geral = desconto_por_grupo['total_desconto'].sum()
+    desconto_por_grupo['pct_do_total'] = (
+        desconto_por_grupo['total_desconto'] / total_desconto_geral * 100
+    ).round(2) if total_desconto_geral > 0 else 0
+
+    return desconto_por_grupo
+
+
+def _resumir_impacto_estoque_critico(df_excluidos: pd.DataFrame, total_desconto_original: float) -> dict:
+    """Resume o impacto da exclusão de itens vencidos/a vencer na análise ajustada."""
+    impacto = {
+        'itens_excluidos': 0,
+        'pedidos_excluidos': 0,
+        'grupos_impactados': 0,
+        'total_desconto_excluido': 0.0,
+        'pct_desconto_excluido': 0.0,
+        'vencido': 0,
+        'vence_30': 0,
+        'vence_60': 0,
+    }
+
+    if len(df_excluidos) == 0:
+        return impacto
+
+    contagem_status = df_excluidos['status_validade'].value_counts().to_dict()
+    total_desconto_excluido = float(df_excluidos['valor_desconto_manual'].sum())
+
+    impacto.update({
+        'itens_excluidos': int(len(df_excluidos)),
+        'pedidos_excluidos': int(df_excluidos['num_pedido'].nunique()),
+        'grupos_impactados': int(df_excluidos['grupo_produto'].nunique()),
+        'total_desconto_excluido': total_desconto_excluido,
+        'pct_desconto_excluido': (
+            total_desconto_excluido / total_desconto_original * 100
+        ) if total_desconto_original > 0 else 0.0,
+        'vencido': int(contagem_status.get('vencido', 0)),
+        'vence_30': int(contagem_status.get('vence_30', 0)),
+        'vence_60': int(contagem_status.get('vence_60', 0)),
+    })
+
+    return impacto
+
+
 
 def analyze_financial(df: pd.DataFrame) -> dict:
     """
@@ -558,8 +614,12 @@ def analyze_financial(df: pd.DataFrame) -> dict:
     
     # === DESCONTOS POR GRUPO DE PRODUTOS ===
     try:
-        from data_loader import load_grupo_produtos
+        try:
+            from data_loader import load_grupo_produtos, load_estoque_critico
+        except ImportError:
+            from analytics.data_loader import load_grupo_produtos, load_estoque_critico
         df_grupo = load_grupo_produtos()
+        df_estoque_critico = load_estoque_critico()
         
         if df_grupo is not None:
             # Garantir que cod_produto é numérico em ambos os DataFrames
@@ -574,30 +634,58 @@ def analyze_financial(df: pd.DataFrame) -> dict:
             df_itens_com_desconto = df_com_grupo[df_com_grupo['valor_desconto_manual'] > 0]
             
             if len(df_itens_com_desconto) > 0:
-                # Agregar por grupo de produto
-                # - total_desconto: soma dos descontos dos ITENS do grupo
-                # - qtd_pedidos: contagem DISTINTA de pedidos (nunique) - um pedido conta 1x por grupo
-                # - pct_medio: média do % de desconto dos itens
-                # - faturamento: soma do preco_total dos itens com desconto do grupo
-                desconto_por_grupo = df_itens_com_desconto.groupby('grupo_produto').agg(
-                    total_desconto=('valor_desconto_manual', 'sum'),
-                    qtd_pedidos=('num_pedido', 'nunique'),
-                    pct_medio=('desconto_manual_pct', 'mean'),
-                    faturamento=('preco_total', 'sum')
-                ).reset_index()
-                
-                # Ordenar por total de desconto e calcular % do total
-                desconto_por_grupo = desconto_por_grupo.sort_values('total_desconto', ascending=False)
-                total_desconto_geral = desconto_por_grupo['total_desconto'].sum()
-                desconto_por_grupo['pct_do_total'] = (desconto_por_grupo['total_desconto'] / total_desconto_geral * 100).round(2) if total_desconto_geral > 0 else 0
+                df_itens_com_desconto = df_itens_com_desconto.copy()
+
+                if df_estoque_critico is not None and len(df_estoque_critico) > 0:
+                    df_estoque_match = df_estoque_critico[
+                        ['cod_produto', 'filial_codigo', 'status_validade', 'dias_janela']
+                    ].drop_duplicates().rename(columns={
+                        'status_validade': 'status_validade_estoque',
+                        'dias_janela': 'dias_janela_estoque'
+                    })
+                    df_itens_com_desconto = pd.merge(
+                        df_itens_com_desconto,
+                        df_estoque_match,
+                        on=['cod_produto', 'filial_codigo'],
+                        how='left'
+                    )
+                    df_itens_com_desconto['estoque_critico'] = df_itens_com_desconto['status_validade_estoque'].notna()
+                    df_itens_com_desconto['status_validade'] = df_itens_com_desconto['status_validade_estoque'].fillna('')
+                    df_itens_com_desconto['dias_janela'] = df_itens_com_desconto['dias_janela_estoque'].fillna(0).astype(int)
+                    df_itens_com_desconto = df_itens_com_desconto.drop(
+                        columns=['status_validade_estoque', 'dias_janela_estoque']
+                    )
+                else:
+                    df_itens_com_desconto['estoque_critico'] = False
+                    df_itens_com_desconto['status_validade'] = ''
+                    df_itens_com_desconto['dias_janela'] = 0
+
+                df_excluidos = df_itens_com_desconto[df_itens_com_desconto['estoque_critico']].copy()
+                df_ajustado = df_itens_com_desconto[~df_itens_com_desconto['estoque_critico']].copy()
+
+                desconto_por_grupo = _calcular_desconto_por_grupo(df_itens_com_desconto)
+                desconto_por_grupo_ajustado = _calcular_desconto_por_grupo(df_ajustado)
+                total_desconto_original = float(df_itens_com_desconto['valor_desconto_manual'].sum())
+                impacto_estoque_critico = _resumir_impacto_estoque_critico(df_excluidos, total_desconto_original)
+                impacto_estoque_critico['total_desconto_original'] = total_desconto_original
+                impacto_estoque_critico['total_desconto_ajustado'] = float(df_ajustado['valor_desconto_manual'].sum())
+
                 results['desconto_por_grupo'] = desconto_por_grupo
+                results['desconto_por_grupo_ajustado'] = desconto_por_grupo_ajustado
+                results['desconto_por_grupo_impacto'] = impacto_estoque_critico
             else:
                 results['desconto_por_grupo'] = None
+                results['desconto_por_grupo_ajustado'] = None
+                results['desconto_por_grupo_impacto'] = None
         else:
             results['desconto_por_grupo'] = None
+            results['desconto_por_grupo_ajustado'] = None
+            results['desconto_por_grupo_impacto'] = None
     except Exception as e:
         print(f"⚠️ Erro ao analisar descontos por grupo de produtos: {e}")
         results['desconto_por_grupo'] = None
+        results['desconto_por_grupo_ajustado'] = None
+        results['desconto_por_grupo_impacto'] = None
     
     return results
 

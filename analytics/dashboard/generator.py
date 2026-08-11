@@ -993,20 +993,106 @@ def generate_dashboard_html(results, output_path, df=None, dashboard_data=None):
 
         <!-- Descontos por Grupo de Produtos -->
         <section class="table-card" style="margin-bottom: 24px;">
-            <h3 class="table-title">📦 Descontos por Grupo de Produtos</h3>
-            <div class="two-columns">
-                <div style="height: 300px; position: relative;">
-                    <canvas id="grupoProdutosChart"></canvas>
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; flex-wrap: wrap; gap: 14px;">
+                <div>
+                    <h3 class="table-title" style="margin-bottom: 4px;">📦 Descontos por Grupo de Produtos x Validade dos Produtos</h3>
+                    <div style="font-size: 13px; color: var(--text-secondary);">
+                        Comparativo entre a visão completa e a visão ajustada, que desconsidera itens vencidos ou a vencer em até 60 dias.
+                    </div>
                 </div>
-                <div style="max-height: 300px; overflow-y: auto; border-radius: 8px; border: 1px solid var(--border);">
-                    <table>
-                        <thead style="position: sticky; top: 0; z-index: 1;">
-                            <tr><th>#</th><th>Grupo de Produto</th><th>Qtd Pedidos</th><th>Total Desconto</th><th>% do Total</th></tr>
-                        </thead>
-                        <tbody id="grupo-produtos-tbody">
-                            <!-- Preenchido via JavaScript -->
-                        </tbody>
-                    </table>
+                <div id="grupoProdutosImpacto" style="display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px;">
+                    <div style="padding: 10px 12px; border-radius: 10px; background: #fff8e1; border: 1px solid #ffe082;">
+                        <div style="color: #8d6e63;">Itens excluídos</div>
+                        <strong id="grupoImpactoItens" style="color: #5d4037;">0</strong>
+                    </div>
+                    <div style="padding: 10px 12px; border-radius: 10px; background: #ffebee; border: 1px solid #ffcdd2;">
+                        <div style="color: #b71c1c;">Desconto removido</div>
+                        <strong id="grupoImpactoDesconto" style="color: #c62828;">R$ 0,00</strong>
+                    </div>
+                    <div style="padding: 10px 12px; border-radius: 10px; background: #e8f5e9; border: 1px solid #c8e6c9;">
+                        <div style="color: #2e7d32;">Visão ajustada</div>
+                        <strong id="grupoImpactoAjustado" style="color: #1b5e20;">R$ 0,00</strong>
+                    </div>
+                    <div style="padding: 10px 12px; border-radius: 10px; background: #ede7f6; border: 1px solid #d1c4e9;">
+                        <div style="color: #5e35b1;">Grupos impactados</div>
+                        <strong id="grupoImpactoGrupos" style="color: #4527a0;">0</strong>
+                    </div>
+                </div>
+            </div>
+            <div style="font-size: 12px; color: var(--text-secondary); margin: -4px 0 12px 0;">
+                Selo <strong style="color: #c62828;">Impactado</strong> indica grupos com redução na visão ajustada.
+                <span id="grupoImpactoMaior" style="display: none; background: #ffebee; color: #c62828; padding: 2px 8px; border-radius: 6px; font-weight: 700; margin-left: 8px; border: 1px solid #ffcdd2; font-size: 11px; align-items: center; gap: 4px;"></span>
+            </div>
+            <!-- Barra de controles: toggle de ordenação -->
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap;">
+                <span style="font-size: 12px; color: var(--text-secondary); font-weight: 600;">Ordenar por:</span>
+                <button id="btnOrdemDesconto" onclick="toggleOrdemGrupos('desconto')" style="padding: 6px 14px; border-radius: 20px; border: 1.5px solid var(--primary); font-size: 12px; font-family: 'Inter', sans-serif; cursor: pointer; font-weight: 600; background: var(--primary); color: #fff; transition: all 0.2s;">💰 Total Desconto</button>
+                <button id="btnOrdemPerda" onclick="toggleOrdemGrupos('perda')" style="padding: 6px 14px; border-radius: 20px; border: 1.5px solid #c62828; font-size: 12px; font-family: 'Inter', sans-serif; cursor: pointer; font-weight: 600; background: #fff; color: #c62828; transition: all 0.2s;">📉 Perda de Ajuste</button>
+            </div>
+            <div class="two-columns">
+                <div>
+                    <div style="font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 10px;">Visão completa</div>
+                    <div style="height: 300px; position: relative; margin-bottom: 12px;">
+                        <canvas id="grupoProdutosChart"></canvas>
+                    </div>
+                    <div style="max-height: 300px; overflow-y: auto; border-radius: 8px; border: 1px solid var(--border);">
+                        <table>
+                            <thead style="position: sticky; top: 0; z-index: 1;">
+                                <tr><th>#</th><th>Grupo de Produto</th><th>Qtd Pedidos</th><th>Total Desconto</th><th>% do Total</th><th>Ajuste</th></tr>
+                            </thead>
+                            <tbody id="grupo-produtos-tbody">
+                                <!-- Preenchido via JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div>
+                    <div style="font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 10px;">Visão ajustada sem vencidos/próximos do vencimento</div>
+                    <div style="height: 300px; position: relative; margin-bottom: 12px;">
+                        <canvas id="grupoProdutosAjustadoChart"></canvas>
+                    </div>
+                    <div style="max-height: 300px; overflow-y: auto; border-radius: 8px; border: 1px solid var(--border);">
+                        <table>
+                            <thead style="position: sticky; top: 0; z-index: 1;">
+                                <tr><th>#</th><th>Grupo de Produto</th><th>Qtd Pedidos</th><th>Total Desconto</th><th>% do Total</th><th>Ajuste</th></tr>
+                            </thead>
+                            <tbody id="grupo-produtos-ajustado-tbody">
+                                <!-- Preenchido via JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <!-- Top impactados no período -->
+            <div style="margin-top: 18px;">
+                <div style="font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 10px;">Ajustes da regra por Grupo</div>
+                <div id="grupoTopImpactados" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px;">
+                    <div style="padding: 12px; border: 1px dashed var(--border); border-radius: 10px; color: var(--text-secondary); font-size: 12px;">
+                        Nenhum impacto calculado.
+                    </div>
+                </div>
+            </div>
+            <!-- Ranking mensal de impacto por grupo -->
+            <div id="rankingMensalContainer" style="margin-top: 24px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+                    <div>
+                        <div style="font-size: 13px; font-weight: 700; color: var(--text-primary);">📅 Ranking de Impacto por Grupo ao Longo dos Últimos 3 meses</div>
+                        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">Evolução do desconto removido (R$) por grupo em cada mês disponível</div>
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <span style="font-size: 11px; color: var(--text-secondary);">Top grupos:</span>
+                        <select id="rankingMensalTopN" onchange="atualizarRankingMensal()" style="padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border); font-size: 12px; font-family: 'Inter', sans-serif; background: var(--card-bg); color: var(--text-primary); cursor: pointer;">
+                            <option value="5">Top 5</option>
+                            <option value="10">Top 10</option>
+                            <option value="0">Todos impactados</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="height: 320px; position: relative;">
+                    <canvas id="rankingMensalChart"></canvas>
+                </div>
+                <div id="rankingMensalTabela" style="margin-top: 14px; max-height: 260px; overflow-y: auto; border-radius: 8px; border: 1px solid var(--border);">
+                    <!-- Preenchido via JavaScript -->
                 </div>
             </div>
         </section>
@@ -1045,6 +1131,12 @@ def generate_dashboard_html(results, output_path, df=None, dashboard_data=None):
     </footer>
 
     <script>
+        let grupoProdutosChart = null;
+        let grupoProdutosAjustadoChart = null;
+        let rankingMensalChart = null;
+        let ordemAtualGrupos = 'desconto';
+        let cacheComparativoGrupos = null;
+
         Chart.defaults.font.family = 'Inter';
         Chart.defaults.color = '#666';
         
@@ -2262,109 +2354,542 @@ def generate_dashboard_html(results, output_path, df=None, dashboard_data=None):
             XLSX.writeFile(wb, `descontos_manuais_${{periodo}}.xlsx`);
         }}
         
-        // Variável global para o gráfico de grupo de produtos
-        let grupoProdutosChart = null;
+        // === NOVAS FUNÇÕES PARA ANÁLISE DE IMPACTO POR GRUPO DE PRODUTOS ===
         
-        // Função para atualizar tabela e gráfico de Grupo de Produtos
-        function atualizarGrupoProdutos(dados) {{
-            if (!dados) return;
-            const tbody = document.getElementById('grupo-produtos-tbody');
+        // Função auxiliar para enriquecer e comparar dados completos vs ajustados
+        function enriquecerComparativoGrupos(gruposOriginais, gruposAjustados) {{
+            const mapOrig = {{}};
+            gruposOriginais.forEach(g => {{
+                mapOrig[g.grupo_produto] = g;
+            }});
+
+            const mapAj = {{}};
+            gruposAjustados.forEach(g => {{
+                mapAj[g.grupo_produto] = g;
+            }});
+
+            // Identificar todos os grupos únicos
+            const todosOsGrupos = Array.from(new Set([
+                ...gruposOriginais.map(g => g.grupo_produto),
+                ...gruposAjustados.map(g => g.grupo_produto)
+            ]));
+
+            const gruposOriginaisEnriquecidos = [];
+            const gruposAjustadosEnriquecidos = [];
+            const topImpactados = [];
+
+            todosOsGrupos.forEach(grupo_produto => {{
+                const orig = mapOrig[grupo_produto] || {{
+                    grupo_produto,
+                    total_desconto: 0,
+                    qtd_pedidos: 0,
+                    pct_do_total: 0,
+                    faturamento: 0
+                }};
+                const aj = mapAj[grupo_produto] || {{
+                    grupo_produto,
+                    total_desconto: 0,
+                    qtd_pedidos: 0,
+                    pct_do_total: 0,
+                    faturamento: 0
+                }};
+
+                const delta_desconto = orig.total_desconto - aj.total_desconto;
+                const pct_reducao = orig.total_desconto > 0 ? (delta_desconto / orig.total_desconto * 100) : 0;
+                const impactado = delta_desconto > 0.01;
+
+                const itemOrig = {{
+                    ...orig,
+                    delta_desconto,
+                    pct_reducao,
+                    impactado
+                }};
+
+                const itemAj = {{
+                    ...aj,
+                    delta_desconto,
+                    pct_reducao,
+                    impactado
+                }};
+
+                gruposOriginaisEnriquecidos.push(itemOrig);
+                gruposAjustadosEnriquecidos.push(itemAj);
+
+                if (impactado) {{
+                    topImpactados.push({{
+                        grupo_produto,
+                        delta_desconto,
+                        pct_reducao
+                    }});
+                }}
+            }});
+
+            // Ordenar impactados pela perda absoluta (delta_desconto)
+            topImpactados.sort((a, b) => b.delta_desconto - a.delta_desconto);
+
+            return {{
+                gruposOriginaisEnriquecidos,
+                gruposAjustadosEnriquecidos,
+                topImpactados
+            }};
+        }}
+
+        function formatarBadgeAjuste(grupo) {{
+            if (!grupo || !grupo.impactado) {{
+                return '<span style="color: #2e7d32; font-weight: 600;">Sem ajuste</span>';
+            }}
+
+            return `
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                    <span style="display: inline-flex; align-items: center; width: fit-content; padding: 2px 8px; border-radius: 999px; background: #ffebee; color: #c62828; font-size: 11px; font-weight: 700;">Impactado</span>
+                    <span style="color: #c62828; font-weight: 600;">-${{formatMoney(grupo.delta_desconto || 0)}}</span>
+                    <span style="color: #8d6e63; font-size: 11px;">${{Number(grupo.pct_reducao || 0).toFixed(1)}}%</span>
+                </div>
+            `;
+        }}
+
+        function renderizarGrupoProdutos(grupos, tbodyId, chartId, chartKey) {{
+            const tbody = document.getElementById(tbodyId);
+            const chartCanvas = document.getElementById(chartId);
             if (!tbody) return;
-            
+
             tbody.innerHTML = '';
-            const grupos = dados.desconto_por_grupo || [];
-            
-            if (grupos.length === 0) {{
-                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #999;">Nenhum dado disponível</td></tr>';
+
+            if (!grupos || grupos.length === 0) {{
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #999;">Nenhum dado disponível</td></tr>';
+                if (chartKey === 'principal' && grupoProdutosChart) {{
+                    grupoProdutosChart.destroy();
+                    grupoProdutosChart = null;
+                }}
+                if (chartKey === 'ajustado' && grupoProdutosAjustadoChart) {{
+                    grupoProdutosAjustadoChart.destroy();
+                    grupoProdutosAjustadoChart = null;
+                }}
                 return;
             }}
-            
-            // Tabela com todos os grupos
+
             grupos.forEach((g, idx) => {{
                 const row = document.createElement('tr');
+                if (g.impactado) {{
+                    row.style.background = 'rgba(255, 235, 238, 0.55)';
+                }}
                 row.innerHTML = `
                     <td><span class="rank-badge">${{idx + 1}}</span></td>
-                    <td>${{g.grupo_produto}}</td>
+                    <td>
+                        <div style="display: flex; flex-direction: column; gap: 4px;">
+                            <span>${{g.grupo_produto}}</span>
+                            ${{g.impactado ? '<span style="display: inline-flex; align-items: center; width: fit-content; padding: 2px 8px; border-radius: 999px; background: #ffebee; color: #c62828; font-size: 11px; font-weight: 700;">Impactado</span>' : ''}}
+                        </div>
+                    </td>
                     <td>${{formatNumber(g.qtd_pedidos)}}</td>
                     <td>${{formatMoney(g.total_desconto)}}</td>
-                    <td>${{g.pct_do_total.toFixed(2)}}%</td>
+                    <td>${{Number(g.pct_do_total || 0).toFixed(2)}}%</td>
+                    <td>${{formatarBadgeAjuste(g)}}</td>
                 `;
                 tbody.appendChild(row);
             }});
-            
-            // Gráfico com top 5
+
             const top5 = grupos.slice(0, 5);
-            const chartCanvas = document.getElementById('grupoProdutosChart');
-            if (chartCanvas) {{
-                if (grupoProdutosChart) {{
-                    grupoProdutosChart.destroy();
-                }}
-                grupoProdutosChart = new Chart(chartCanvas, {{
-                    type: 'bar',
-                    data: {{
-                        labels: top5.map(g => g.grupo_produto),
-                        datasets: [{{
-                            label: 'Total Desconto',
-                            data: top5.map(g => g.total_desconto),
-                            backgroundColor: [
-                                'rgba(244, 67, 54, 0.8)',
-                                'rgba(255, 152, 0, 0.8)',
-                                'rgba(255, 193, 7, 0.8)',
-                                'rgba(76, 175, 80, 0.8)',
-                                'rgba(33, 150, 243, 0.8)'
-                            ],
-                            borderRadius: 8,
-                            borderWidth: 0,
-                            barPercentage: 0.7
-                        }}]
-                    }},
-                    plugins: [ChartDataLabels],
-                    options: {{
-                        indexAxis: 'y',
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        layout: {{ padding: {{ right: 120, left: 10 }} }},
-                        plugins: {{
-                            legend: {{ display: false }},
-                            tooltip: {{ enabled: false }},
-                            datalabels: {{
-                                display: true,
-                                color: '#ffffff',
-                                backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                                borderRadius: 4,
-                                padding: 5,
-                                font: {{ weight: 'bold', size: 10 }},
-                                align: 'end',
-                                anchor: 'end',
-                                offset: 4,
-                                clip: false,
-                                formatter: (value, ctx) => {{
-                                    const pct = top5[ctx.dataIndex]?.pct_do_total || 0;
-                                    return formatMoney(value) + ' (' + pct.toFixed(1) + '%)';
+            if (!chartCanvas) return;
+
+            if (chartKey === 'principal' && grupoProdutosChart) {{
+                grupoProdutosChart.destroy();
+            }}
+            if (chartKey === 'ajustado' && grupoProdutosAjustadoChart) {{
+                grupoProdutosAjustadoChart.destroy();
+            }}
+
+            // Modo perda: exibir delta no grafico
+            const modoPerda = (typeof ordemAtualGrupos !== 'undefined') && ordemAtualGrupos === 'perda';
+            const chartLabel = modoPerda ? 'Perda de Ajuste' : 'Total Desconto';
+
+            const chart = new Chart(chartCanvas, {{
+                type: 'bar',
+                data: {{
+                    labels: top5.map(g => g.grupo_produto),
+                    datasets: [{{
+                        label: chartLabel,
+                        data: top5.map(g => modoPerda ? (g.delta_desconto || 0) : g.total_desconto),
+                        backgroundColor: chartKey === 'principal' ? 'rgba(220, 38, 38, 0.88)' : 'rgba(234, 88, 12, 0.88)',
+                        borderColor: 'transparent',
+                        borderWidth: 0,
+                        borderRadius: 8,
+                        barPercentage: 0.7
+                    }}]
+
+                }},
+
+                plugins: [ChartDataLabels],
+
+                options: {{
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    layout: {{ padding: {{ right: 120, left: 10 }} }},
+
+                    plugins: {{
+                        legend: {{ display: false }},
+                        tooltip: {{ enabled: false }},
+                        datalabels: {{
+                            display: true,
+                            color: '#ffffff',
+                            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                            borderRadius: 4,
+                            padding: 5,
+                            font: {{ weight: 'bold', size: 10 }},
+                            align: 'end',
+                            anchor: 'end',
+                            offset: 4,
+                            clip: false,
+                            formatter: (value, ctx) => {{
+                                const grupo = top5[ctx.dataIndex] || {{}};
+                                if (modoPerda) {{
+                                    const pct = grupo.pct_reducao || 0;
+                                    return '-' + formatMoney(value) + ' (' + Number(pct).toFixed(1) + '% red.)';
                                 }}
+                                const pct = grupo.pct_do_total || 0;
+                                return formatMoney(value) + ' (' + Number(pct).toFixed(1) + '%)';
+                            }}
+                        }}
+                    }},
+                    scales: {{
+                        x: {{ beginAtZero: true, display: false }},
+                        y: {{
+                            ticks: {{
+                                color: '#333333',
+                                font: {{ weight: 'bold', size: 11 }},
+                                callback: function(value) {{
+                                    const label = this.getLabelForValue ? this.getLabelForValue(value) : value;
+                                    if (typeof label === 'string' && label.length > 20) {{
+                                        return label.substring(0, 20) + '...';
+                                    }}
+                                    return label;
+                                }}
+                            }},
+                            grid: {{ display: false }},
+                            border: {{ display: false }}
+                        }}
+                    }}
+                }}
+            }});
+
+
+            if (chartKey === 'principal') {{
+                grupoProdutosChart = chart;
+            }} else {{
+                grupoProdutosAjustadoChart = chart;
+            }}
+        }}
+
+        // Funcao para gerar o ranking mensal de impacto por grupo
+        function gerarRankingMensalImpacto(topN) {{
+            const topNVal = parseInt(topN || document.getElementById('rankingMensalTopN')?.value || 5);
+
+            // Coletar todos os meses disponíveis (exceto 'todos') - limitados aos últimos 3 meses
+            const mesesChaves = Object.keys(dadosPorMes).filter(k => k !== 'todos').sort().slice(-3);
+            if (mesesChaves.length === 0) {{
+                // Sem dados mensais - ocultar bloco inteiro
+                const contEl = document.getElementById('rankingMensalContainer');
+                if (contEl) contEl.style.display = 'none';
+                return;
+            }}
+
+            // Para cada mes, calcular o comparativo de grupos
+            const gruposDeltasPorMes = {{}};
+            const todosGruposImpactados = new Set();
+
+            mesesChaves.forEach(mes => {{
+                const dadosMes = dadosPorMes[mes];
+                if (!dadosMes) return;
+                const gruposMes = dadosMes.desconto_por_grupo || [];
+                const gruposAjMes = dadosMes.desconto_por_grupo_ajustado || [];
+                const comp = enriquecerComparativoGrupos(gruposMes, gruposAjMes);
+                comp.topImpactados.forEach(g => {{
+                    todosGruposImpactados.add(g.grupo_produto);
+                    if (!gruposDeltasPorMes[g.grupo_produto]) gruposDeltasPorMes[g.grupo_produto] = {{}};
+                    gruposDeltasPorMes[g.grupo_produto][mes] = g.delta_desconto || 0;
+                }});
+                comp.gruposOriginaisEnriquecidos.filter(g => g.impactado).forEach(g => {{
+                    todosGruposImpactados.add(g.grupo_produto);
+                    if (!gruposDeltasPorMes[g.grupo_produto]) gruposDeltasPorMes[g.grupo_produto] = {{}};
+                    if (!gruposDeltasPorMes[g.grupo_produto][mes]) {{
+                        gruposDeltasPorMes[g.grupo_produto][mes] = g.delta_desconto || 0;
+                    }}
+                }});
+            }});
+
+            if (todosGruposImpactados.size === 0) {{
+                const tabelaEl2 = document.getElementById('rankingMensalTabela');
+                const canvasEl2 = document.getElementById('rankingMensalChart');
+                if (canvasEl2) canvasEl2.parentElement.style.display = 'none';
+                if (tabelaEl2) tabelaEl2.innerHTML = `
+                    <div style="padding:16px;text-align:center;color:var(--text-secondary);font-size:12px;border:1px dashed var(--border);border-radius:8px;">
+                        Nenhum impacto de validade detectado nos meses individuais.<br>
+                        <span style="font-size:11px;">O impacto é calculado no período consolidado.</span>
+                    </div>
+                `;
+                return;
+            }}
+
+            // Calcular total de impacto por grupo para rankeamento
+            const gruposRankeados = Array.from(todosGruposImpactados)
+                .map(nome => ({{
+                    nome,
+                    totalDelta: mesesChaves.reduce((s, m) => s + (gruposDeltasPorMes[nome]?.[m] || 0), 0)
+                }}))
+                .sort((a, b) => b.totalDelta - a.totalDelta);
+
+            const gruposFiltrados = topNVal > 0 ? gruposRankeados.slice(0, topNVal) : gruposRankeados;
+
+            // Labels dos meses formatados
+            const labelsMeses = mesesChaves.map(m => {{
+                const parts = m.split('-');
+                if (parts.length === 2) {{
+                    const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+                    return meses[parseInt(parts[1]) - 1] + '/' + parts[0].slice(2);
+                }}
+                return m;
+            }});
+
+            // Paleta de cores para os grupos
+            const palette = [
+                'rgba(229,57,53,0.85)', 'rgba(255,152,0,0.85)', 'rgba(33,150,243,0.85)',
+                'rgba(76,175,80,0.85)', 'rgba(156,39,176,0.85)', 'rgba(0,188,212,0.85)',
+                'rgba(255,193,7,0.85)', 'rgba(244,67,54,0.85)', 'rgba(103,58,183,0.85)',
+                'rgba(0,150,136,0.85)'
+            ];
+
+            const datasets = gruposFiltrados.map((grupo, idx) => ({{
+                label: grupo.nome,
+                data: mesesChaves.map(m => gruposDeltasPorMes[grupo.nome]?.[m] || 0),
+                backgroundColor: palette[idx % palette.length].replace('0.85', '0.75'),
+                borderColor: palette[idx % palette.length],
+                borderWidth: 2,
+                borderRadius: 5,
+            }}));
+
+            const canvas = document.getElementById('rankingMensalChart');
+            if (!canvas) return;
+            canvas.parentElement.style.display = '';
+            // Garantir que o container pai esteja visível
+            const containerEl = document.getElementById('rankingMensalContainer');
+            if (containerEl) containerEl.style.display = '';
+
+            if (rankingMensalChart) {{
+                rankingMensalChart.destroy();
+                rankingMensalChart = null;
+            }}
+
+            rankingMensalChart = new Chart(canvas, {{
+                type: 'bar',
+                data: {{ labels: labelsMeses, datasets }},
+                plugins: [ChartDataLabels],
+                options: {{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    layout: {{ padding: {{ top: 10 }} }},
+                    plugins: {{
+                        legend: {{
+                            display: true,
+                            position: 'bottom',
+                            labels: {{ font: {{ size: 11 }}, padding: 14, boxWidth: 14 }}
+                        }},
+                        tooltip: {{
+                            callbacks: {{
+                                label: ctx => ` ${{ctx.dataset.label}}: ${{formatMoney((ctx.parsed && ctx.parsed.y !== undefined) ? ctx.parsed.y : 0)}}`
                             }}
                         }},
-                        scales: {{
-                            x: {{ beginAtZero: true, display: false }},
-                            y: {{
-                                ticks: {{
-                                    color: '#333333',
-                                    font: {{ weight: 'bold', size: 11 }},
-                                    callback: function(value) {{
-                                        const label = this.getLabelForValue ? this.getLabelForValue(value) : value;
-                                        if (typeof label === 'string' && label.length > 20) {{
-                                            return label.substring(0, 20) + '...';
-                                        }}
-                                        return label;
-                                    }}
-                                }},
-                                grid: {{ display: false }},
-                                border: {{ display: false }}
+                        datalabels: {{
+                            display: false,
+                            color: '#fff',
+                            backgroundColor: ctx => datasets[ctx.datasetIndex]?.borderColor || '#333',
+                            borderRadius: 3,
+                            padding: {{ top: 2, bottom: 2, left: 4, right: 4 }},
+                            font: {{ size: 9, weight: 'bold' }},
+                            anchor: 'end',
+                            align: 'end',
+                            offset: 2,
+                            clip: false,
+                            formatter: v => v >= 1000 ? 'R$ ' + (v/1000).toFixed(0) + 'k' : formatMoney(v)
+                        }}
+                    }},
+                    scales: {{
+                        x: {{
+                            stacked: false,
+                            grid: {{ display: false }},
+                            ticks: {{ font: {{ size: 11 }}, color: '#555' }}
+                        }},
+                        y: {{
+                            beginAtZero: true,
+                            grid: {{ color: 'rgba(0,0,0,0.06)' }},
+                            ticks: {{
+                                font: {{ size: 10 }},
+                                color: '#555',
+                                callback: v => 'R$ ' + (v >= 1000 ? (v/1000).toFixed(0) + 'k' : v.toFixed(0))
                             }}
                         }}
                     }}
-                }});
+                }}
+            }});
+
+            // Tabela de ranking mensal
+            const tabelaEl = document.getElementById('rankingMensalTabela');
+            if (tabelaEl) {{
+                const mesHeaders = labelsMeses.map(m => `<th>${{m}}</th>`).join('');
+                const rows = gruposFiltrados.map((grupo, idx) => {{
+                    const cor = palette[idx % palette.length];
+                    const corBg = cor.replace('0.85', '0.12');
+                    const celulas = mesesChaves.map(m => {{
+                        const v = gruposDeltasPorMes[grupo.nome]?.[m] || 0;
+                        return v > 0
+                            ? `<td style="color:#c62828;font-weight:600;">-${{formatMoney(v)}}</td>`
+                            : `<td style="color:#bbb;">—</td>`;
+                    }}).join('');
+                    const totalDelta = grupo.totalDelta;
+                    return `
+                        <tr style="background:${{corBg}}">
+                            <td><span class="rank-badge">${{idx+1}}</span></td>
+                            <td style="font-weight:700;">${{grupo.nome}}</td>
+                            ${{celulas}}
+                            <td style="color:#c62828;font-weight:700;">-${{formatMoney(totalDelta)}}</td>
+                        </tr>
+                    `;
+                }}).join('');
+                tabelaEl.innerHTML = `
+                    <table>
+                        <thead style="position:sticky;top:0;z-index:1;">
+                            <tr>
+                                <th>#</th>
+                                <th>Grupo</th>
+                                ${{mesHeaders}}
+                                <th>Total removido</th>
+                            </tr>
+                        </thead>
+                        <tbody>${{rows}}</tbody>
+                    </table>
+                `;
             }}
+        }}
+
+        function atualizarRankingMensal() {{
+            const topN = document.getElementById('rankingMensalTopN')?.value || 5;
+            gerarRankingMensalImpacto(topN);
+        }}
+
+        function toggleOrdemGrupos(ordem) {{
+            ordemAtualGrupos = ordem;
+            
+            const btnDesconto = document.getElementById('btnOrdemDesconto');
+            const btnPerda = document.getElementById('btnOrdemPerda');
+            
+            if (ordem === 'perda') {{
+                if (btnDesconto) {{
+                    btnDesconto.style.background = '#fff';
+                    btnDesconto.style.color = 'var(--primary)';
+                    btnDesconto.style.border = '1.5px solid var(--primary)';
+                }}
+                if (btnPerda) {{
+                    btnPerda.style.background = '#c62828';
+                    btnPerda.style.color = '#fff';
+                    btnPerda.style.border = '1.5px solid #c62828';
+                }}
+            }} else {{
+                if (btnDesconto) {{
+                    btnDesconto.style.background = 'var(--primary)';
+                    btnDesconto.style.color = '#fff';
+                    btnDesconto.style.border = '1.5px solid var(--primary)';
+                }}
+                if (btnPerda) {{
+                    btnPerda.style.background = '#fff';
+                    btnPerda.style.color = '#c62828';
+                    btnPerda.style.border = '1.5px solid #c62828';
+                }}
+            }}
+            
+            if (cacheComparativoGrupos) {{
+                const aplicarOrdem = (lista) => {{
+                    if (ordemAtualGrupos === 'perda') {{
+                        return [...lista].sort((a, b) => (b.delta_desconto || 0) - (a.delta_desconto || 0));
+                    }}
+                    return [...lista].sort((a, b) => (b.total_desconto || 0) - (a.total_desconto || 0));
+                }};
+                
+                renderizarGrupoProdutos(aplicarOrdem(cacheComparativoGrupos.gruposOriginaisEnriquecidos), 'grupo-produtos-tbody', 'grupoProdutosChart', 'principal');
+                renderizarGrupoProdutos(aplicarOrdem(cacheComparativoGrupos.gruposAjustadosEnriquecidos), 'grupo-produtos-ajustado-tbody', 'grupoProdutosAjustadoChart', 'ajustado');
+            }}
+        }}
+
+        // Funcao para atualizar tabela e grafico de Grupo de Produtos
+        function atualizarGrupoProdutos(dados) {{
+            if (!dados) return;
+
+            const grupos = dados.desconto_por_grupo || [];
+            const gruposAjustados = dados.desconto_por_grupo_ajustado || [];
+            const impacto = dados.desconto_por_grupo_impacto || {{}};
+            const comparativo = enriquecerComparativoGrupos(grupos, gruposAjustados);
+            cacheComparativoGrupos = comparativo;
+
+            const aplicarOrdem = (lista) => {{
+                if (ordemAtualGrupos === 'perda') {{
+                    return [...lista].sort((a, b) => (b.delta_desconto || 0) - (a.delta_desconto || 0));
+                }}
+                return [...lista].sort((a, b) => (b.total_desconto || 0) - (a.total_desconto || 0));
+            }};
+
+            renderizarGrupoProdutos(aplicarOrdem(comparativo.gruposOriginaisEnriquecidos), 'grupo-produtos-tbody', 'grupoProdutosChart', 'principal');
+            renderizarGrupoProdutos(aplicarOrdem(comparativo.gruposAjustadosEnriquecidos), 'grupo-produtos-ajustado-tbody', 'grupoProdutosAjustadoChart', 'ajustado');
+
+            const itens = document.getElementById('grupoImpactoItens');
+            const desconto = document.getElementById('grupoImpactoDesconto');
+            const ajustado = document.getElementById('grupoImpactoAjustado');
+            const gruposImpactados = document.getElementById('grupoImpactoGrupos');
+            const maiorImpacto = document.getElementById('grupoImpactoMaior');
+            const topImpactadosEl = document.getElementById('grupoTopImpactados');
+
+            if (itens) {{
+                const resumoItens = Number(impacto.itens_excluidos || 0).toLocaleString('pt-BR');
+                const resumoStatus = `V: ${{impacto.vencido || 0}} | 30d: ${{impacto.vence_30 || 0}} | 60d: ${{impacto.vence_60 || 0}}`;
+                itens.textContent = `${{resumoItens}} (${{resumoStatus}})`;
+            }}
+            if (desconto) {{
+                const pct = Number(impacto.pct_desconto_excluido || 0).toFixed(1);
+                desconto.textContent = `${{formatMoney(impacto.total_desconto_excluido || 0)}} (${{pct}}%)`;
+            }}
+            if (ajustado) {{
+                ajustado.textContent = formatMoney(impacto.total_desconto_ajustado || 0);
+            }}
+            if (gruposImpactados) {{
+                gruposImpactados.textContent = formatNumber(impacto.grupos_impactados || comparativo.topImpactados.length || 0);
+            }}
+            if (maiorImpacto) {{
+                if (comparativo.topImpactados.length > 0) {{
+                    const top = comparativo.topImpactados[0];
+                    maiorImpacto.style.display = 'inline-flex';
+                    maiorImpacto.innerHTML = `⚡ Maior ajuste: ${{top.grupo_produto}} (-${{formatMoney(top.delta_desconto || 0)}})`;
+                }} else {{
+                    maiorImpacto.style.display = 'none';
+                }}
+            }}
+            if (topImpactadosEl) {{
+                if (comparativo.topImpactados.length === 0) {{
+                    topImpactadosEl.innerHTML = `
+                        <div style="padding: 12px; border: 1px dashed var(--border); border-radius: 10px; color: var(--text-secondary); font-size: 12px;">
+                            Nenhum impacto calculado no periodo selecionado.
+                        </div>
+                    `;
+                }} else {{
+                    topImpactadosEl.innerHTML = comparativo.topImpactados.map((grupo, idx) => `
+                        <div style="padding: 12px; border-radius: 10px; background: #fff5f5; border: 1px solid #ffcdd2;">
+                            <div style="font-size: 11px; color: #c62828; font-weight: 700; margin-bottom: 6px;">#${{idx + 1}}</div>
+                            <div style="font-size: 13px; font-weight: 700; color: #3e2723; margin-bottom: 6px;">${{grupo.grupo_produto}}</div>
+                            <div style="font-size: 12px; color: #5d4037;">Removido: <strong>${{formatMoney(grupo.delta_desconto || 0)}}</strong></div>
+                            <div style="font-size: 12px; color: #6d4c41;">Reducao: ${{Number(grupo.pct_reducao || 0).toFixed(1)}}%</div>
+                        </div>
+                    `).join('');
+                }}
+            }}
+            
+            gerarRankingMensalImpacto();
         }}
         
         // Inicializar tabelas ao carregar
